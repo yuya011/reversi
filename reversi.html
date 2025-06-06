@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>リバーシ</title>
+    <style>
+        /* 全体のスタイル */
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            background-color: #f0f0f0;
+            margin: 0;
+            min-height: 100vh;
+        }
+
+        /* ゲーム全体のコンテナ */
+        #game-container {
+            text-align: center;
+        }
+        
+        h1 {
+            color: #333;
+        }
+
+        /* 盤面のスタイル */
+        #board {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            width: 90vmin;
+            height: 90vmin;
+            max-width: 500px;
+            max-height: 500px;
+            background-color: #008000;
+            border: 5px solid #005000;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            padding: 5px;
+            gap: 2px;
+        }
+
+        /* マスのスタイル */
+        .square {
+            background-color: #008000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            border: 1px solid #006a00;
+            border-radius: 4px;
+        }
+
+        /* 石のスタイル */
+        .disc {
+            width: 85%;
+            height: 85%;
+            border-radius: 50%;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.3), 0 2px 3px rgba(0,0,0,0.2);
+        }
+
+        /* 黒石 */
+        .black {
+            background-color: #111;
+        }
+
+        /* 白石 */
+        .white {
+            background-color: #f8f8f8;
+        }
+        
+        /* 置ける場所のヒント */
+        .hint {
+            width: 40%;
+            height: 40%;
+            background-color: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+        }
+
+        /* ゲーム情報表示エリア */
+        #info-panel {
+            margin: 20px 0;
+            padding: 10px 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        #game-info {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #444;
+            min-height: 1.5em; /* メッセージの高さが変化してもレイアウトが崩れないように */
+        }
+        
+        #score {
+            margin-top: 10px;
+            font-size: 1.1em;
+            color: #555;
+        }
+
+        /* ゲーム終了時のメッセージ */
+        #game-over-message {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #d9534f;
+        }
+
+        /* リセットボタン */
+        #reset-button {
+            margin-top: 20px;
+            padding: 12px 25px;
+            font-size: 1.1em;
+            font-weight: bold;
+            color: #fff;
+            background-color: #0275d8;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.1s;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+        }
+        
+        #reset-button:hover {
+            background-color: #025aa5;
+        }
+        #reset-button:active {
+            transform: translateY(1px);
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <h1>リバーシ</h1>
+
+        <div id="info-panel">
+            <div id="game-info">黒の番です</div>
+            <div id="score">黒: 2 - 白: 2</div>
+        </div>
+
+        <div id="board"></div>
+
+        <button id="reset-button">新しいゲーム</button>
+    </div>
+
+    <script>
+        // 定数定義
+        const BOARD_SIZE = 8;
+        const EMPTY = 0;
+        const BLACK = 1;
+        const WHITE = -1;
+
+        // ゲーム状態
+        let board = [];
+        let currentPlayer;
+        let gameOver = false;
+
+        // DOM要素
+        const boardElement = document.getElementById('board');
+        const gameInfoElement = document.getElementById('game-info');
+        const scoreElement = document.getElementById('score');
+        const resetButton = document.getElementById('reset-button');
+        
+        // 8方向のベクトル(y, x)
+        const DIRECTIONS = [
+            [-1, -1], [-1, 0], [-1, 1],
+            [0, -1],           [0, 1],
+            [1, -1], [1, 0], [1, 1]
+        ];
+
+        /**
+         * ゲームを初期化する
+         */
+        function initGame() {
+            // 8x8の盤面を空の状態で作成
+            board = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(EMPTY));
+
+            // 中央に初期の石を配置
+            board[3][3] = WHITE;
+            board[3][4] = BLACK;
+            board[4][3] = BLACK;
+            board[4][4] = WHITE;
+            
+            // 黒のプレイヤーからスタート
+            currentPlayer = BLACK;
+            gameOver = false;
+            
+            // 盤面を描画し、情報を更新
+            renderBoard();
+            updateInfo();
+            
+            resetButton.addEventListener('click', initGame);
+        }
+
+        /**
+         * 盤面をHTMLに描画する
+         */
+        function renderBoard() {
+            boardElement.innerHTML = '';
+            const validMoves = getValidMoves(currentPlayer);
+
+            for (let y = 0; y < BOARD_SIZE; y++) {
+                for (let x = 0; x < BOARD_SIZE; x++) {
+                    const square = document.createElement('div');
+                    square.className = 'square';
+                    square.dataset.y = y;
+                    square.dataset.x = x;
+                    
+                    const disc = document.createElement('div');
+
+                    // 石を配置
+                    if (board[y][x] !== EMPTY) {
+                        disc.className = 'disc ' + (board[y][x] === BLACK ? 'black' : 'white');
+                        square.appendChild(disc);
+                    } else {
+                        // 置ける場所のヒントを表示
+                         if (validMoves.some(move => move.y === y && move.x === x)) {
+                            const hint = document.createElement('div');
+                            hint.className = 'hint';
+                            square.appendChild(hint);
+                         }
+                    }
+
+                    square.addEventListener('click', () => handleSquareClick(y, x));
+                    boardElement.appendChild(square);
+                }
+            }
+        }
+        
+        /**
+         * マスがクリックされた時の処理
+         * @param {number} y - クリックされたマスのy座標
+         * @param {number} x - クリックされたマスのx座標
+         */
+        function handleSquareClick(y, x) {
+            if (gameOver) return;
+
+            const flippableStones = getFlippableStones(y, x, currentPlayer);
+            if (flippableStones.length === 0) {
+                return; // 無効な手
+            }
+
+            // 石を置く
+            board[y][x] = currentPlayer;
+            
+            // 石を裏返す
+            flippableStones.forEach(stone => {
+                board[stone.y][stone.x] = currentPlayer;
+            });
+            
+            // プレイヤーを交代
+            switchPlayer();
+        }
+        
+        /**
+         * プレイヤーを交代する。パスの判定もここで行う
+         */
+        function switchPlayer() {
+            currentPlayer *= -1; // プレイヤーを交代 (1 -> -1, -1 -> 1)
+            
+            // 新しいプレイヤーが置ける場所があるかチェック
+            if (getValidMoves(currentPlayer).length === 0) {
+                 // 置ける場所がない場合
+                updateInfo('パス！');
+                currentPlayer *= -1; // プレイヤーを元に戻す
+                
+                 // 戻したプレイヤーも置ける場所がないかチェック（ゲーム終了判定）
+                if (getValidMoves(currentPlayer).length === 0) {
+                    endGame();
+                    return;
+                }
+            }
+            
+            // 盤面と情報を更新
+            renderBoard();
+            updateInfo();
+        }
+        
+        /**
+         * 指定した場所に石を置いた場合に裏返せる石のリストを取得する
+         * @param {number} y - 石を置くマスのy座標
+         * @param {number} x - 石を置くマスのx座標
+         * @param {number} player - プレイヤー (BLACK or WHITE)
+         * @returns {Array<{y: number, x: number}>} - 裏返せる石の座標の配列
+         */
+        function getFlippableStones(y, x, player) {
+            // すでに石が置かれている場合は置けない
+            if (board[y][x] !== EMPTY) {
+                return [];
+            }
+            
+            let allFlippableStones = [];
+            
+            // 8方向をチェック
+            for (const [dy, dx] of DIRECTIONS) {
+                let stonesInDirection = [];
+                let currentY = y + dy;
+                let currentX = x + dx;
+                
+                // 盤面の外に出るか、空のマスに当たるまで進む
+                while (currentY >= 0 && currentY < BOARD_SIZE && currentX >= 0 && currentX < BOARD_SIZE) {
+                    const opponent = board[currentY][currentX];
+                    
+                    if (opponent === EMPTY) {
+                        // 空のマスならこの方向は無効
+                        stonesInDirection = [];
+                        break;
+                    }
+                    
+                    if (opponent === player) {
+                        // 自分の石を見つけたら、間の石が裏返せる
+                        break;
+                    }
+                    
+                    // 相手の石ならリストに追加
+                    stonesInDirection.push({ y: currentY, x: currentX });
+                    
+                    currentY += dy;
+                    currentX += dx;
+                }
+                
+                // 自分の石で挟めなかった場合、または盤面の端まで達した場合
+                if (currentY < 0 || currentY >= BOARD_SIZE || currentX < 0 || currentX >= BOARD_SIZE || board[currentY][currentX] !== player) {
+                    stonesInDirection = [];
+                }
+                
+                allFlippableStones = allFlippableStones.concat(stonesInDirection);
+            }
+            
+            return allFlippableStones;
+        }
+        
+        /**
+         * 指定したプレイヤーが置けるすべての有効な手のリストを取得する
+         * @param {number} player - プレイヤー (BLACK or WHITE)
+         * @returns {Array<{y: number, x: number}>} - 有効な手の座標の配列
+         */
+        function getValidMoves(player) {
+            const moves = [];
+            for (let y = 0; y < BOARD_SIZE; y++) {
+                for (let x = 0; x < BOARD_SIZE; x++) {
+                    if (board[y][x] === EMPTY) {
+                        if (getFlippableStones(y, x, player).length > 0) {
+                            moves.push({ y, x });
+                        }
+                    }
+                }
+            }
+            return moves;
+        }
+        
+        /**
+         * 各色の石の数を数える
+         * @returns {{black: number, white: number, empty: number}} - 石の数のオブジェクト
+         */
+        function countStones() {
+            let blackCount = 0;
+            let whiteCount = 0;
+            let emptyCount = 0;
+            for (let y = 0; y < BOARD_SIZE; y++) {
+                for (let x = 0; x < BOARD_SIZE; x++) {
+                    if (board[y][x] === BLACK) blackCount++;
+                    else if (board[y][x] === WHITE) whiteCount++;
+                    else emptyCount++;
+                }
+            }
+            return { black: blackCount, white: whiteCount, empty: emptyCount };
+        }
+        
+        /**
+         * ゲーム情報を更新する
+         * @param {string} [message=null] - 表示する一時的なメッセージ (例: "パス！")
+         */
+        function updateInfo(message = null) {
+             if (gameOver) return;
+
+            if (message) {
+                 gameInfoElement.textContent = message;
+            } else {
+                 gameInfoElement.textContent = (currentPlayer === BLACK ? '黒' : '白') + 'の番です';
+            }
+
+            const scores = countStones();
+            scoreElement.textContent = `黒: ${scores.black} - 白: ${scores.white}`;
+            
+            // ゲーム終了条件のチェック
+            if (scores.empty === 0 || getValidMoves(BLACK).length === 0 && getValidMoves(WHITE).length === 0) {
+                endGame();
+            }
+        }
+        
+        /**
+         * ゲームを終了し、勝敗を表示する
+         */
+        function endGame() {
+            if (gameOver) return;
+            gameOver = true;
+
+            const scores = countStones();
+            let resultMessage = '';
+            
+            if (scores.black > scores.white) {
+                resultMessage = '黒の勝ちです！';
+            } else if (scores.white > scores.black) {
+                resultMessage = '白の勝ちです！';
+            } else {
+                resultMessage = '引き分けです！';
+            }
+            
+            gameInfoElement.textContent = `ゲーム終了！ ${resultMessage}`;
+        }
+
+        // ゲーム開始
+        window.onload = initGame;
+    </script>
+
+</body>
+</html>
